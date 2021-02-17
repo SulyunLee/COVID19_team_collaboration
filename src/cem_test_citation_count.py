@@ -29,9 +29,9 @@ def calculate_vif(X, thresh=10.0):
 def cem_test(target_colname, var, combined_papers_scaled, feature_var):
 
     # Remove multi-collinearity
-    aftervif = calculate_vif(combined_papers_scaled[[x for x in feature_var if x != var]])
+    aftervif = calculate_vif(combined_papers_scaled[feature_var])
 
-    formula = "{} ~ covid19:{} + {}".format(target_colname, var, "+".join(aftervif.columns))
+    formula = "{} ~ C(covid19):{} + C(covid19) + {}".format(target_colname, var, "+".join(aftervif.columns))
     interaction_model = smf.ols(formula=formula, data=combined_papers_scaled).fit()
     write_filename = "{}_{}_cem_model".format(target_colname, var)
     with open("../results/{}.csv".format(write_filename), "w") as fh:
@@ -80,15 +80,18 @@ if __name__ == "__main__":
     flu_paper_df = flu_paper_df.assign(max_hindex_log = max_hindex_log_transformed)
     flu_paper_df = flu_paper_df.assign(citation_count_log = citation_count_log_transformed)
 
-    feature_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity", "max_hindex_log", "time_since_pub", "team_size_log", "prac_affil_rate"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    # define variables
+    control_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "time_since_pub", "team_size_log", "prac_affil_rate"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    predictor_var = "topic_familiarity"
+    target_var = "citaion_count_log"
 
     # drop NA rows
     # COVID19
-    covid19_paper_df = covid19_paper_df.dropna(subset=feature_var + ["citation_count_log"])
+    covid19_paper_df = covid19_paper_df.dropna(subset=[predictor_var] + control_var + ["novelty_10perc", "novelty_5perc", "novelty_1perc"])
     print("Number of COVID papers: {}".format(covid19_paper_df.shape[0]))
 
     # flu
-    flu_paper_df = flu_paper_df.dropna(subset=feature_var + ["citation_count_log"])
+    flu_paper_df = flu_paper_df.dropna(subset=[predictor_var] + control_var + ["novelty_10perc", "novelty_5perc", "novelty_1perc"])
     print("Number of flu papers: {}".format(flu_paper_df.shape[0]))
 
     print("Creating matching variable...")
@@ -100,8 +103,9 @@ if __name__ == "__main__":
     flu_team_size_binary = flu_paper_df.team_size.apply(lambda x: 1 if x > avg_team_size else 0)
     flu_paper_df = flu_paper_df.assign(team_size_binary=flu_team_size_binary)
 
-    covid19_matched0 = covid19_paper_df[covid19_paper_df.team_size_binary == 0].sample(n=1240)
-    covid19_matched1 = covid19_paper_df[covid19_paper_df.team_size_binary == 1].sample(n=944)
+    random.seed(12345)
+    covid19_matched0 = covid19_paper_df[covid19_paper_df.team_size_binary == 0].sample(n=1238)
+    covid19_matched1 = covid19_paper_df[covid19_paper_df.team_size_binary == 1].sample(n=943)
     covid19_matched = pd.concat([covid19_matched0, covid19_matched1])
 
     print("Generating covid indicator variable...")
@@ -109,17 +113,18 @@ if __name__ == "__main__":
     flu_paper_df = flu_paper_df.assign(covid19=0)
 
     # Combine covid and flu papers
-    covid19_matched = covid19_matched[feature_var + ["covid19", "citation_count_log"]]
-    flu_matched = flu_paper_df[feature_var + ["covid19", "citation_count_log"]]
+    covid19_matched = covid19_matched[[predictor_var] + control_var + ["covid19", "citation_count_log"]]
+    flu_matched = flu_paper_df[[predictor_var] + control_var + ["covid19", "citation_count_log"]]
     combined_papers = pd.concat([covid19_matched, flu_matched])
 
     # Standardize
-    X = np.array(combined_papers[feature_var])
+    X = np.array(combined_papers[[predictor_var] + control_var])
     X_scaled = scale(X)
 
     combined_papers_scaled = combined_papers.copy()
-    combined_papers_scaled[feature_var] = X_scaled
+    combined_papers_scaled[[predictor_var] + control_var] = X_scaled
 
     ## Effect of topic familiarity
-    citation_count_tf_model = cem_test("citation_count_log", "topic_familiarity", combined_papers_scaled, feature_var)
-    citation_count_ntr_model = cem_test("citation_count_log", "new_tie_rate", combined_papers_scaled, feature_var)
+    citation_count_tf_model = cem_test("citation_count_log", "topic_familiarity", combined_papers_scaled, [predictor_var] + control_var)
+    citation_count_ntr_model = cem_test("citation_count_log", "new_tie_rate", combined_papers_scaled, [predictor_var] + control_var)
+

@@ -27,21 +27,13 @@ def calculate_vif(X, thresh=10.0):
 
     return X
 
-def generate_binary_citation_var(perc, df):
-    cut_point = int(df.shape[0]*perc) 
-    cut = df.citation_count_log.sort_values().iloc[-cut_point] 
-    citation_counts_binary = np.where(df.citation_count_log > cut,1,0)
-    var_name = "citation_binary_{}perc".format(int(perc*100))
-    df = df.assign(**{var_name:citation_counts_binary})
-
-    return df
 
 def cem_test(perc, var, combined_papers_scaled, feature_var):
     # remove multi-collinearity
-    aftervif = calculate_vif(combined_papers_scaled[[x for x in feature_var if x != var]])
+    aftervif = calculate_vif(combined_papers_scaled[feature_var])
 
-    formula = "citation_binary_{}perc ~ covid19:{} + {}".format(int(perc*100), var, "+".join(aftervif.columns))
-    model = smf.ols(formula=formula, data=combined_papers_scaled).fit()
+    formula = "citation_counts_binary_{}perc ~ C(covid19) + C(covid19):{} + {}".format(int(perc*100), var, "+".join(aftervif.columns))
+    model = smf.logit(formula=formula, data=combined_papers_scaled).fit(maxiter=1000, method='lbfgs')
 
     write_filename = "citation_binary_{}perc_{}_cem_model".format(int(perc*100), var)
     with open("../results/{}.csv".format(write_filename), "w") as fh:
@@ -91,15 +83,16 @@ if __name__ == "__main__":
     flu_paper_df = flu_paper_df.assign(max_hindex_log = max_hindex_log_transformed)
     flu_paper_df = flu_paper_df.assign(citation_count_log = citation_count_log_transformed)
 
-    feature_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity", "max_hindex_log", "time_since_pub", "team_size_log", "prac_affil_rate"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    control_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "time_since_pub", "team_size_log", "prac_affil_rate"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    predictor_var = "topic_familiarity"
 
     # drop NA rows
     # COVID19
-    covid19_paper_df = covid19_paper_df.dropna(subset=feature_var + ["citation_count_log"])
+    covid19_paper_df = covid19_paper_df.dropna(subset=[predictor_var] + control_var + ["novelty_10perc", "novelty_5perc", "novelty_1perc"])
     print("Number of COVID papers: {}".format(covid19_paper_df.shape[0]))
 
     # flu
-    flu_paper_df = flu_paper_df.dropna(subset=feature_var + ["citation_count_log"])
+    flu_paper_df = flu_paper_df.dropna(subset=[predictor_var] + control_var + ["novelty_10perc", "novelty_5perc", "novelty_1perc"])
     print("Number of flu papers: {}".format(flu_paper_df.shape[0]))
 
     print("Creating matching variable...")
@@ -111,38 +104,31 @@ if __name__ == "__main__":
     flu_team_size_binary = flu_paper_df.team_size.apply(lambda x: 1 if x > avg_team_size else 0)
     flu_paper_df = flu_paper_df.assign(team_size_binary=flu_team_size_binary)
 
-    covid19_matched0 = covid19_paper_df[covid19_paper_df.team_size_binary == 0].sample(n=1240)
-    covid19_matched1 = covid19_paper_df[covid19_paper_df.team_size_binary == 1].sample(n=944)
+    random.seed(12345)
+    covid19_matched0 = covid19_paper_df[covid19_paper_df.team_size_binary == 0].sample(n=1238)
+    covid19_matched1 = covid19_paper_df[covid19_paper_df.team_size_binary == 1].sample(n=943)
     covid19_matched = pd.concat([covid19_matched0, covid19_matched1])
 
     print("Generating covid indicator variable...")
     covid19_matched = covid19_matched.assign(covid19=1)
-    flu_paper_df = flu_paper_df.assign(covid19=0)
+    flu_matched = flu_paper_df.assign(covid19=0)
 
-    # Generate binary citation variable
-    # Combine covid and flu papers
-    covid19_matched = covid19_matched[feature_var + ["covid19", "citation_count_log"]]
-    covid19_matched = generate_binary_citation_var(0.2, covid19_matched)
-    covid19_matched = generate_binary_citation_var(0.1, covid19_matched)
-    covid19_matched = generate_binary_citation_var(0.05, covid19_matched)
-
-    flu_matched = flu_paper_df[feature_var + ["covid19", "citation_count_log"]]
-    flu_matched = generate_binary_citation_var(0.2, flu_matched)
-    flu_matched = generate_binary_citation_var(0.1, flu_matched)
-    flu_matched = generate_binary_citation_var(0.05, flu_matched)
+    covid19_matched = covid19_matched[[predictor_var] + control_var + ["covid19", "citation_counts_binary_20perc", "citation_counts_binary_10perc", "citation_counts_binary_5perc", "citation_counts_binary_1perc"]]
+    flu_matched = flu_matched[[predictor_var] + control_var + ["covid19", "citation_counts_binary_20perc", "citation_counts_binary_10perc", "citation_counts_binary_5perc", "citation_counts_binary_1perc"]]
     combined_papers = pd.concat([covid19_matched, flu_matched])
 
     # Standardize
-    X = np.array(combined_papers[feature_var])
+    X = np.array(combined_papers[[predictor_var] + control_var])
     X_scaled = scale(X)
 
     combined_papers_scaled = combined_papers.copy()
-    combined_papers_scaled[feature_var] = X_scaled
+    combined_papers_scaled[[predictor_var] + control_var] = X_scaled
 
     ## Effect of topic familiarity
-    binary_citation_tf_model = cem_test(0.2, "topic_familiarity", combined_papers_scaled, feature_var)
-    binary_citation_ntr_model = cem_test(0.2, "new_tie_rate", combined_papers_scaled, feature_var)
-    binary_citation_tf_model = cem_test(0.1, "topic_familiarity", combined_papers_scaled, feature_var)
-    binary_citation_ntr_model = cem_test(0.1, "new_tie_rate", combined_papers_scaled, feature_var)
-    binary_citation_tf_model = cem_test(0.05, "topic_familiarity", combined_papers_scaled, feature_var)
-    binary_citation_ntr_model = cem_test(0.05, "new_tie_rate", combined_papers_scaled, feature_var)
+    binary_citation_20perc_tf_model = cem_test(0.2, "topic_familiarity", combined_papers_scaled, [predictor_var] + control_var)
+    binary_citation_10perc_tf_model = cem_test(0.1, "topic_familiarity", combined_papers_scaled, [predictor_var] + control_var)
+    binary_citation_5perc_tf_model = cem_test(0.05, "topic_familiarity", combined_papers_scaled, [predictor_var] + control_var)
+    binary_citation_1perc_tf_model = cem_test(0.01, "topic_familiarity", combined_papers_scaled, [predictor_var] + control_var)
+    
+    ## Effect of new collaboration tie rate
+    binary_citation_5perc_ntr_model = cem_test(0.05, "new_tie_rate", combined_papers_scaled, [predictor_var] + control_var)
