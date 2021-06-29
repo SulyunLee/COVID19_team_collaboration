@@ -16,19 +16,14 @@ def correlation_analysis(df, feature_colnames, target_colname):
         print("Corr({}, {}): {}".format(feature, target_colname, corr))
     
 def calculate_vif(X, thresh=10.0):
-    print(thresh)
     dropped = True
     while dropped:
         variables = X.columns
         dropped = False
-        print(X.columns)
         vif = [variance_inflation_factor(X[variables].values, X.columns.get_loc(var)) for var in X.columns]
-        print(vif)
         max_vif = max(vif)
-        print(max(vif))
         if max_vif > thresh:
             maxloc = vif.index(max_vif)
-            print(X.columns.tolist()[maxloc])
             X = X.drop([X.columns.tolist()[maxloc]], axis=1)
             dropped = True
 
@@ -46,11 +41,13 @@ def linreg_model(df, feature_colnames, target_colname, write_filename):
     '''
     X = df[feature_colnames]
     aftervif = calculate_vif(X)
+
+    features = [col.replace(col, "C({})".format(col)) if "publish_" in col else col for col in aftervif.columns]
     formula = "{} ~ {}".format(target_colname, "+".join(aftervif.columns))
 
 
     model = smf.ols(formula=formula, data=df).fit()
-    with open("../results/{}.csv".format(write_filename), "w") as fh:
+    with open("../results/updated_results/{}.csv".format(write_filename), "w") as fh:
         fh.write(model.summary().as_csv())
 
     return model
@@ -59,11 +56,12 @@ def linreg_curvilinear_model(df, feature_colnames, target_colname, curvilinear_v
     X = df[feature_colnames]
     aftervif = calculate_vif(X)
 
+    features = [col.replace(col, "C({})".format(col)) if "publish_" in col else col for col in aftervif.columns]
     formula = "{} ~ I({}**2) + {}".format(target_colname, curvilinear_var, "+".join(aftervif.columns))
 
     model = smf.ols(formula=formula, data=df).fit()
 
-    with open("../results/{}.csv".format(write_filename), "w") as fh:
+    with open("../results/updated_results/{}.csv".format(write_filename), "w") as fh:
         fh.write(model.summary().as_csv())
     fh.close()
 
@@ -81,12 +79,24 @@ if __name__ == "__main__":
 
     team_size_log_transformed = np.log(flu_paper_df['team_size']+1)
     max_hindex_log_transformed = np.log(flu_paper_df['max_hindex']+1)
+    citation_count_log_transformed = np.log(flu_paper_df['citation_count']+1)
+    citation_per_month_log_transformed = np.log(flu_paper_df['citation_per_month']+1)
 
     flu_paper_df = flu_paper_df.assign(team_size_log = team_size_log_transformed)
     flu_paper_df = flu_paper_df.assign(max_hindex_log = max_hindex_log_transformed)
+    flu_paper_df = flu_paper_df.assign(citation_count_log = citation_count_log_transformed)
+    flu_paper_df = flu_paper_df.assign(citation_per_month_log = citation_per_month_log_transformed)
+
+    # get dummy variables for publish month
+    publish_month_dummy = pd.get_dummies(flu_paper_df.publish_month_text)
+    publish_month_dummy.columns = ["publish_{}".format(c) for c in publish_month_dummy.columns]
+    flu_paper_df = flu_paper_df.assign(**publish_month_dummy)
+    publish_month_columns = list(publish_month_dummy.columns)
+    publish_month_columns.remove("publish_Sep")
+    publish_month_columns.remove("publish_Aug")
 
     # define variables
-    control_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "time_since_pub", "team_size_log", "prac_affil_rate"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    control_var = ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "team_size_log", "prac_affil_rate"] + publish_month_columns + ["topic_distr{}".format(i) for i in range(1,20)]
     predictor_var = "topic_familiarity"
 
     # drop na rows
@@ -110,11 +120,12 @@ if __name__ == "__main__":
     # plt.close()
 
     # Standardize
-    X = np.array(flu_paper_df[[predictor_var] + control_var])
+    standardize_columns = [predictor_var] + ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "team_size_log", "prac_affil_rate", "days_passed", "novelty_10perc"] + ["topic_distr{}".format(i) for i in range(1,20)]
+    X = np.array(flu_paper_df[standardize_columns])
     X_scaled = scale(X)
 
     flu_paper_scaled_df = flu_paper_df.copy()
-    flu_paper_scaled_df[[predictor_var] + control_var] = X_scaled
+    flu_paper_scaled_df[standardize_columns] = X_scaled
 
     print("Modeling..")
 
@@ -123,27 +134,45 @@ if __name__ == "__main__":
     model_result = pd.concat([novelty_10perc_model.params, novelty_10perc_model.bse, novelty_10perc_model.conf_int(), novelty_10perc_model.pvalues], axis=1)
     model_result.reset_index(inplace=True)
     model_result.columns = ["variable", "coef", "Std_err", "ci_low", "ci_high", "pval"]
-    model_result.to_csv("../results/flu_linreg_novelty_10perc_exported.csv", index=False)
+    model_result.to_csv("../results/updated_results/flu_linreg_novelty_10perc_exported.csv", index=False)
 
     # Novelty - 5%
     novelty_5perc_model = linreg_model(flu_paper_scaled_df, [predictor_var] + control_var, "novelty_5perc", "flu_linreg_result_novelty_5perc")
     model_result = pd.concat([novelty_5perc_model.params, novelty_5perc_model.bse, novelty_5perc_model.conf_int(), novelty_5perc_model.pvalues], axis=1)
     model_result.reset_index(inplace=True)
     model_result.columns = ["variable", "coef", "Std_err", "ci_low", "ci_high", "pval"]
-    model_result.to_csv("../results/flu_linreg_novelty_5perc_exported.csv", index=False)
+    model_result.to_csv("../results/updated_results/flu_linreg_novelty_5perc_exported.csv", index=False)
 
     # Novelty - 1%
     novelty_1perc_model = linreg_model(flu_paper_scaled_df, [predictor_var] + control_var, "novelty_1perc", "flu_linreg_result_novelty_1perc")
     model_result = pd.concat([novelty_1perc_model.params, novelty_1perc_model.bse, novelty_1perc_model.conf_int(), novelty_1perc_model.pvalues], axis=1)
     model_result.reset_index(inplace=True)
     model_result.columns = ["variable", "coef", "Std_err", "ci_low", "ci_high", "pval"]
-    model_result.to_csv("../results/flu_linreg_novelty_1perc_exported.csv", index=False)
+    model_result.to_csv("../results/updated_results/flu_linreg_novelty_1perc_exported.csv", index=False)
 
     # Curvilinear model
     curvilinear_model = linreg_curvilinear_model(flu_paper_scaled_df, [predictor_var] + control_var, "novelty_10perc", "topic_familiarity", "flu_linreg_curvilinear_tf_result_novelty_10perc")
     model_result = pd.concat([curvilinear_model.params, curvilinear_model.bse, curvilinear_model.conf_int(), curvilinear_model.pvalues], axis=1)
     model_result.reset_index(inplace=True)
     model_result.columns = ["variable", "coef", "Std_err", "ci_low", "ci_high", "pval"]
-    model_result.to_csv("../results/flu_curvilinear_novelty_10perc_exported.csv")
+    model_result.to_csv("../results/updated_results/flu_curvilinear_novelty_10perc_exported.csv")
 
+    #######################################################################################
+    ### Interaction experiments
+    #######################################################################################
+    ## add time * knowledge continuity interaction term to the model
+    print("## Time * Knowledge continuity interaction ##")
+    target_var = "novelty_10perc"
+    feature_colnames = [predictor_var] + control_var + ["days_passed"]
+    X = flu_paper_scaled_df[feature_colnames]
+    aftervif = calculate_vif(X)
+
+    features = [col.replace(col, "C({})".format(col)) if "publish_" in col else col for col in aftervif.columns]
+    formula = "{} ~ days_passed:topic_familiarity + {} + days_passed".format(target_var, "+".join(features))
+
+    inter_model = smf.ols(formula=formula, data=flu_paper_scaled_df).fit()
+    inter_model_result = pd.concat([inter_model.params, inter_model.bse, inter_model.conf_int(), inter_model.pvalues], axis=1)
+    inter_model_result.reset_index(inplace=True)
+    inter_model_result.columns = ["variable", "coef", "Std_err", "ci_low", "ci_high", "pval"]
+    inter_model_result.to_csv("../results/updated_results/flu_time_kc_inter_novelty10perc__exported.csv")
 
