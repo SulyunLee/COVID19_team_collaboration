@@ -12,8 +12,6 @@ from sklearn.preprocessing import scale
 def correlation_analysis(df, feature_colnames, target_colname):
     for feature in feature_colnames:
         corr = df[feature].corr(df[target_colname])
-        # corr, p_val = pearsonr(df[feature], df[target_colname])
-        # print("Corr({}, {}): {} ({})".format(feature, target_colname, corr, p_val))
         print("Corr({}, {}): {}".format(feature, target_colname, corr))
 
 def calculate_vif(X, thresh=10.0):
@@ -109,21 +107,6 @@ if __name__ == "__main__":
     covid19_paper_df = covid19_paper_df.dropna(subset=[predictor_var] + control_var + ["novelty_10perc", "novelty_5perc", "novelty_1perc"])
     print("Number of instances: {}".format(covid19_paper_df.shape[0]))
 
-    # plot novelty variable
-    # sns.distplot(covid19_paper_df['novelty_10perc'])
-    # plt.title("Distribution of novelty (10%)")
-    # plt.savefig("../plots/covid19_novelty_10perc.png")
-    # plt.close()
-
-    # sns.distplot(covid19_paper_df['novelty_5perc'])
-    # plt.title("Distribution of novelty (5%)")
-    # plt.savefig("../plots/covid19_novelty_5perc.png")
-    # plt.close()
-
-    # sns.distplot(covid19_paper_df['novelty_1perc'])
-    # plt.title("Distribution of novelty (1%)")
-    # plt.savefig("../plots/covid19_novelty_1perc.png")
-    # plt.close()
 
     # Standardize
     standardize_columns = [predictor_var] + ["avg_tdsim", "new_tie_rate", "hindex_gini","cultural_similarity", "topic_familiarity_var", "max_hindex_log", "team_size_log", "prac_affil_rate", "days_passed", "novelty_10perc"] + ["topic_distr{}".format(i) for i in range(1,20)]

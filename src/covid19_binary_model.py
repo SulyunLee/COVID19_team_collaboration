@@ -47,8 +47,6 @@ def fit_binary_model(perc, covid19_paper_scaled_df, aftervif):
 
     model = sm.Logit(y, x).fit()
 
-    # model = smf.logit(formula=formula, data=covid19_paper_scaled_df).fit(method="bfgs", maxiter=5000, skip_hessian=True)
-
     write_filename = "covid19_logit_model"
     with open("../results/updated_results/{}_top{}%.csv".format(write_filename, int(perc*100)), "w") as fh:
         fh.write(model.summary().as_csv())
@@ -64,7 +62,6 @@ def fit_curvilinear_binary_model(perc, df, after_vif, curvilinear_var):
     y, x = patsy.dmatrices(formula, df, return_type="dataframe")
 
     model = sm.Logit(y, x).fit()
-    # model = smf.logit(formula=formula, data=df).fit(method="bfgs", maxiter=5000, skip_hessian=True)
 
     write_filename = "covid19_logit_curvilinear_{}_model".format(curvilinear_var)
     with open("../results/updated_results/{}_top{}%.csv".format(write_filename, int(perc*100)), "w") as fh:

@@ -133,9 +133,11 @@ if __name__ == "__main__":
 
     # correlation matrix
     correlation_matrix = covid19_paper_df[[predictor_var] + control_var + ["citation_per_month_log", "citation_per_month_binary_5perc", "novelty_10perc"]].corr()
+    # export correlation matrix
     correlation_matrix.to_csv("../results/updated_results/covid19_modeling_variables_corr_matrix.csv")
 
     # print the summary stsatistics for each variable
+    print("## Summary statistics")
     print("Mean: ")
     print(covid19_paper_df[[predictor_var] + control_var + ["citation_per_month_log", "citation_per_month_binary_5perc", "novelty_10perc"]].mean())
     print("SD: ")
@@ -160,13 +162,6 @@ if __name__ == "__main__":
     # export data for curvilinear effect plotting
     covid19_paper_scaled_df[["topic_familiarity", "citation_per_month_log", "citation_per_month_binary_5perc", "novelty_10perc"]].to_csv("../results/updated_results/covid19_curvilinear_effect_data_exported.csv", index=False)
 
-    # collaboration rate vs. time
-    corr, pval = stats.pearsonr(covid19_paper_scaled_df.new_tie_rate, covid19_paper_scaled_df.days_passed)
-    print("New collaboration rate vs. time correlation: {} ({})".format(corr, pval))
-
-    ob_range = covid19_paper_scaled_df[(covid19_paper_scaled_df.topic_familiarity >= -1) & (covid19_paper_scaled_df.topic_familiarity <= 1)]
-    breakthrough_over_apex = ob_range[ob_range.topic_familiarity > 0.5].shape[0]
-    print("Breakthrough over apex: {}".format(breakthrough_over_apex/ob_range.shape[0]))
     #######################################################################################
     ### Interaction experiments
     #######################################################################################
@@ -200,10 +195,6 @@ if __name__ == "__main__":
     print("## Novelty * Knowledge continuity interaction ##")
     covid19_paper_scaled_df = covid19_paper_scaled_df.dropna(subset=["novelty_10perc"]) # drop na rows
 
-    ob_range = covid19_paper_scaled_df[(covid19_paper_scaled_df.topic_familiarity >= -1) & (covid19_paper_scaled_df.topic_familiarity <= 1)]
-    novelty_over_apex = ob_range[ob_range.topic_familiarity > 0.8].shape[0]
-    print("Novelty over apex: {}".format(novelty_over_apex/ob_range.shape[0]))
-
     feature_colnames = [predictor_var] + control_var + ["novelty_10perc"]
     X = covid19_paper_scaled_df[feature_colnames]
     aftervif = calculate_vif(X)
@@ -229,13 +220,6 @@ if __name__ == "__main__":
     # export dataset for interaction term plotting.
     covid19_paper_scaled_df[["topic_familiarity", "days_passed", "novelty_10perc", "citation_per_month_log", "citation_per_month_binary_20perc", \
             "citation_per_month_binary_10perc", "citation_per_month_binary_5perc"]].to_csv("../results/updated_results/covid19_scaled_interaction_exported.csv", index=False)
-
-
-    ### Simple correlation analysis
-    # novelty score vs. time
-    corr, pval = stats.pearsonr(covid19_paper_scaled_df.novelty_10perc, covid19_paper_scaled_df.days_passed)
-    print("Novelty score vs. time correlation: {} ({})".format(corr, pval))
-
 
 
 
